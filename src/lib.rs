@@ -53,7 +53,7 @@
 //! Assuming the same home directory of `/home/user` and CWD of `/home/user/Documents`,
 //! the `resolve_in` methods will evaluate in the following ways:
 //!
-//! ```
+//! ```no_run
 //! use std::path::Path;
 //! use resolve_path::PathResolveExt;
 //!
@@ -182,17 +182,40 @@ fn try_resolve_path<'a>(base: &Path, to_resolve: &'a Path) -> Result<Cow<'a, Pat
     } else {
         // Attempt to resolve a tilde in the base path
         let base_resolved_tilde = resolve_tilde(base)?;
-        if base_resolved_tilde.is_absolute() {
-            base_resolved_tilde.into_owned()
-        } else {
+        if base_resolved_tilde.is_relative() {
             return Err(IoError::new(
                 ErrorKind::InvalidData,
                 "the base path must be able to resolve to an absolute path",
             ));
         }
+
+        base_resolved_tilde.into_owned()
     };
 
-    let resolved = absolute_base.join(to_resolve);
+    // If the base path points to a file, use that file's parent directory as the base
+    let base_directory = match std::fs::metadata(&absolute_base) {
+        Ok(meta) => {
+            // If we know this path points to a file, use the file's parent dir
+            if meta.is_file() {
+                match absolute_base.parent() {
+                    Some(parent) => parent.to_path_buf(),
+                    None => {
+                        return Err(IoError::new(
+                            ErrorKind::NotFound,
+                            "the base path points to a file with no parent directory",
+                        ))
+                    }
+                }
+            } else {
+                // If we know this path points to a dir, use it
+                absolute_base
+            }
+        }
+        // If we cannot get FS metadata about this path, just use it as-is
+        Err(_) => absolute_base,
+    };
+
+    let resolved = base_directory.join(to_resolve);
     Ok(Cow::Owned(resolved))
 }
 
@@ -380,5 +403,15 @@ mod tests {
     fn test_resolve_cwd() {
         std::env::set_current_dir("/tmp").unwrap();
         assert_eq!("garbage.txt".resolve(), Path::new("/tmp/garbage.txt"));
+    }
+
+    #[test]
+    fn test_resolve_base_file() {
+        let base_path = "/tmp/path-resolve-test.txt";
+        std::fs::write(base_path, "Hello!").unwrap();
+        assert_eq!(
+            "./other-tmp-file.txt".resolve_in(base_path),
+            Path::new("/tmp/other-tmp-file.txt")
+        );
     }
 }
