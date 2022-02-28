@@ -2,6 +2,9 @@
 name = "resolve-path"
 version = "0.1.0"
 edition = "2021"
+description = "Easily resolve tilde paths and relative paths"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/nicholastmosher/resolve-path"
 
 [dependencies]
 dirs = "4"
